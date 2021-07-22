@@ -1,0 +1,9 @@
+.mypy_cache/
+.python-version
+.vim/
+*@neomake*.py$
+build/
+dist/
+*.pyc$
+configmanager.egg-info
+*__pycache__*
