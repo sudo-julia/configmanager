@@ -6,7 +6,7 @@ from configparser import ConfigParser
 from io import StringIO
 from pathlib import Path
 from typing import Dict, Union
-import appdirs
+from appdirs import user_config_dir
 
 
 class ConfigManager:
@@ -21,9 +21,9 @@ class ConfigManager:
             defaults to {config_dir}/config.ini
 
     methods:
-        read_config(config_file: str | Path = None)
+        read_config(config_file: Union[str, Path] = None)
             reads a configuration file and returns the found values
-        write_config(config_file: str | Path = None)
+        write_config(config_file: Union[str, Path] = None)
             writes a configuration file
     """
 
@@ -39,21 +39,23 @@ class ConfigManager:
                 the name of the project
             template: Dict[str, Dict[str, str]]
                 a dictionary containing the expected configuration template
-            config_file: str | Path, optional (default: self.config_file)
+            config_file: Union[str, Path], optional (default: self.config_file)
                 the location of the configuration file
         """
         self.project = project
         self.template = template
-        config_dir: str = appdirs.user_config_dir(self.project)
-        self.config_file: str | Path = config_file or f"{config_dir}/config.ini"
+        config_dir: str = user_config_dir(self.project)
+        self.config_file: Union[str, Path] = config_file or f"{config_dir}/config.ini"
 
-    def read_config(self, config_file: str | Path = None) -> Dict[str, Dict[str, str]]:
+    def read_config(
+        self, config_file: Union[str, Path] = None
+    ) -> Dict[str, Dict[str, str]]:
         """
         reads sections from an ini file
         returns a dictionary of dictionaries, {"section": {"key": "value"}}
 
         parameters:
-            config_file: str | Path, optional (default: self.config_file)
+            config_file: Union[str, Path], optional (default: self.config_file)
                 the configuration file to read from
         """
         config_file = config_file or self.config_file
@@ -105,7 +107,7 @@ class ConfigManager:
         writes a default template to a configuration file
 
         parameters:
-            config_file: str | Path, optional (default: self.config_file)
+            config_file: Union[str, Path], optional (default: self.config_file)
                 the configuration file to read from
         """
         config_file = config_file or self.config_file
