@@ -2,7 +2,8 @@
 """
 configuration file operations
 """
-from configparser import ConfigParser, SectionProxy
+from configparser import ConfigParser
+from io import StringIO
 from pathlib import Path
 from typing import Dict, Union
 import appdirs
@@ -29,28 +30,27 @@ class ConfigManager:
     def __init__(
         self,
         project: str,
+        template: Dict[str, Dict[str, Union[str, None]]],
         config_file=None,
-        template=None,
     ):
         """
         parameters:
             project: str
                 the name of the project
+            template: Dict[str, Dict[str, str]]
+                a dictionary containing the expected configuration template
             config_file: str | Path, optional (default: self.config_file)
                 the location of the configuration file
         """
         self.project = project
+        self.template = template
         config_dir: str = appdirs.user_config_dir(self.project)
-        self.config_file: Union[str, Path] = config_file or f"{config_dir}/config.ini"
-        # TODO (jam) create config sections with a loaded template, as opposed to static
-        self.template = template or {}
+        self.config_file: str | Path = config_file or f"{config_dir}/config.ini"
 
-    def read_config(
-        self, config_file: Union[str, Path] = None
-    ) -> Dict[str, Dict[str, str]]:
+    def read_config(self, config_file: str | Path = None) -> Dict[str, Dict[str, str]]:
         """
         reads sections from an ini file
-        returns a Dictionary of Dictionaries, {"section": {"key": "value"}}
+        returns a dictionary of dictionaries, {"section": {"key": "value"}}
 
         parameters:
             config_file: str | Path, optional (default: self.config_file)
@@ -58,36 +58,47 @@ class ConfigManager:
         """
         config_file = config_file or self.config_file
         config_file = Path(config_file)
-        config: ConfigParser = ConfigParser()
-        config.read(config_file)
+        parser: ConfigParser = ConfigParser()
 
+        # get values from the config file, create it if it doesn't exist
         try:
-            config.read(config_file)
+            with open(config_file) as file:
+                fixed = file.read().format(**self.template)
+            parser.read_file(StringIO(fixed))
         except FileNotFoundError:
             print("Config file not found. Creating one now...")
             self.write_config(config_file)
+            print("Run script again to use the new config file.")
+            SystemExit()
         except PermissionError as error:
-            raise error
+            raise error from SystemError()
 
-        config_info: Dict[str, Dict[str, str]] = {}
-        config_info["api keys"] = {}
-        config_info["locations"] = {}
+        configuration: Dict[str, Dict[str, str]] = {
+            s: dict(parser.items(s)) for s in parser.sections()
+        }
 
-        keys: SectionProxy = config["API Keys"]
-        config_info["api keys"]["consumer_key"] = keys["consumer_key"]
-        config_info["api keys"]["consumer_secret"] = keys["consumer_secret"]
-        config_info["api keys"]["access_token_key"] = keys["access_token_key"]
-        config_info["api keys"]["access_token_secret"] = keys["access_token_secret"]
+        # grab the section containing keys
+        keys: Dict[str, str] = {}
+        key_sec: str = ""
+        for section in configuration.keys():
+            if "key" in section.casefold():
+                key_sec = section
+                keys = configuration[section].copy()
+                break
+        if not keys and not key_sec:
+            SystemError()
 
-        locations: SectionProxy = config["Locations"]
-        config_info["locations"]["log_location"] = locations["log_location"]
-
-        for key, value in config_info["api keys"].items():
+        # read any keyfiles and update configuration dictionary
+        for key, value in keys.items():
+            # skip over comments
+            if key[0] == ";" or not value:
+                continue
             value = Path(value).expanduser()
             if value.exists():
-                config_info["api keys"][key] = read_key(value)
+                keys[key] = read_key(value)
 
-        return config_info
+        configuration[key_sec] = keys
+        return configuration
 
     def write_config(self, config_file: Union[str, Path] = None):
         """
@@ -99,29 +110,19 @@ class ConfigManager:
         """
         config_file = config_file or self.config_file
         config_file = Path(config_file)
+        parser: ConfigParser = ConfigParser(allow_no_value=True)
 
-        config: ConfigParser = ConfigParser(allow_no_value=True)
-
-        config["API Keys"] = {  # type: ignore
-            "; Value can be the key itself or a filepath to a file containing it": None,
-            "consumer_key": "",
-            "consumer_secret": "",
-            "access_token_key": "",
-            "access_token_secret": "",
-        }
-
-        config["Locations"] = {  # type: ignore
-            "; Location of the logfile": None,
-            "log_location": appdirs.user_log_dir(self.project),
-        }
+        # populate the config file with the template
+        for section in self.template.keys():
+            parser[section] = self.template[section]  # type: ignore
 
         try:
             if not config_file.parent.exists():
                 config_file.parent.mkdir(parents=True)
             with config_file.open("w") as configfile:
-                config.write(configfile)
+                parser.write(configfile)
         except PermissionError as error:
-            raise error
+            raise error from SystemError()
 
         print(f"Configuration file created at {config_file}")
 
